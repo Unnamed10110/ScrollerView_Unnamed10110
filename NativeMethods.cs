@@ -17,12 +17,19 @@ internal static class NativeMethods
     public const uint MOD_NOREPEAT = 0x4000;
 
     public const uint VK_NUMPAD0 = 0x60;
+    public const int VK_ESCAPE = 0x1B;
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    public static bool IsEscapeDown() =>
+        (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
 
     // ---- Mouse / cursor --------------------------------------------------
 

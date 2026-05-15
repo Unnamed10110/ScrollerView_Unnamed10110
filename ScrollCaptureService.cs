@@ -46,90 +46,103 @@ internal sealed class ScrollCaptureService
         var safeCursor = ComputeSafeCursorPos(screenRegion);
 
         double originalPercent = target.ScrollPercent;
+        bool stoppedEarly = false;
 
         // Reset to the start of the scrollable element.
         target.TrySetScrollPercent(0.0);
-        Thread.Sleep(SettleAfterScrollMs);
+        SleepPollEscape(SettleAfterScrollMs, ref stoppedEarly);
 
         // Park the cursor outside the capture region and give any hover state
         // (tooltips, button highlight, smooth-scroll indicators) time to fade.
         NativeMethods.SetCursorPos(safeCursor.X, safeCursor.Y);
-        Thread.Sleep(CursorSafeSettleMs);
+        SleepPollEscape(CursorSafeSettleMs, ref stoppedEarly);
 
         var captures = new List<Bitmap>();
         try
         {
             captures.Add(ScreenCapture.CaptureScreenRegion(screenRegion));
 
-            double viewSize = target.ViewSize;
-            if (double.IsNaN(viewSize) || viewSize <= 0 || viewSize > 100) viewSize = 25;
-            double step = Math.Max(viewSize * 0.6, 3.0);
-
-            int stagnantCount = 0;
-            for (int i = 0; i < MaxIterations; i++)
+            if (!stoppedEarly)
             {
-                if (target.IsAtEnd) break;
+                double viewSize = target.ViewSize;
+                if (double.IsNaN(viewSize) || viewSize <= 0 || viewSize > 100) viewSize = 25;
+                double step = Math.Max(viewSize * 0.6, 3.0);
 
-                double currentPercent = target.ScrollPercent;
-
-                // 1) Try UI Automation first.
-                bool uiaMoved = false;
-                if (!double.IsNaN(currentPercent))
+                int stagnantCount = 0;
+                for (int i = 0; i < MaxIterations; i++)
                 {
-                    double nextPercent = Math.Min(100.0, currentPercent + step);
-                    uiaMoved = target.TrySetScrollPercent(nextPercent);
-                }
-                if (uiaMoved) Thread.Sleep(SettleAfterScrollMs);
+                    if (CheckEscape(ref stoppedEarly)) break;
+                    if (target.IsAtEnd) break;
 
-                double afterPercent = target.ScrollPercent;
-                bool uiaAdvanced = uiaMoved &&
-                                   !double.IsNaN(currentPercent) &&
-                                   !double.IsNaN(afterPercent) &&
-                                   (afterPercent - currentPercent) > 0.05;
+                    double currentPercent = target.ScrollPercent;
 
-                // 2) If UIA didn't actually move the content (common in browsers
-                //    that don't keep ScrollPercent in sync after wheel), fall
-                //    back to a synthetic mouse-wheel event. We always send the
-                //    wheel even when UIA reports success but didn't advance,
-                //    because the UIA percent is sometimes stale rather than
-                //    failed.
-                if (!uiaAdvanced)
-                {
-                    if (!ScrollByMouseWheel(target, screenRegion, direction, WheelNotchesPerStep))
+                    // 1) Try UI Automation first.
+                    bool uiaMoved = false;
+                    if (!double.IsNaN(currentPercent))
                     {
-                        break;
+                        double nextPercent = Math.Min(100.0, currentPercent + step);
+                        uiaMoved = target.TrySetScrollPercent(nextPercent);
                     }
-                    Thread.Sleep(SettleAfterScrollMs);
+                    if (uiaMoved && SleepPollEscape(SettleAfterScrollMs, ref stoppedEarly))
+                        break;
+
+                    double afterPercent = target.ScrollPercent;
+                    bool uiaAdvanced = uiaMoved &&
+                                       !double.IsNaN(currentPercent) &&
+                                       !double.IsNaN(afterPercent) &&
+                                       (afterPercent - currentPercent) > 0.05;
+
+                    // 2) If UIA didn't actually move the content (common in browsers
+                    //    that don't keep ScrollPercent in sync after wheel), fall
+                    //    back to a synthetic mouse-wheel event. We always send the
+                    //    wheel even when UIA reports success but didn't advance,
+                    //    because the UIA percent is sometimes stale rather than
+                    //    failed.
+                    if (!uiaAdvanced)
+                    {
+                        if (!ScrollByMouseWheel(target, screenRegion, direction, WheelNotchesPerStep))
+                        {
+                            break;
+                        }
+                        if (SleepPollEscape(SettleAfterScrollMs, ref stoppedEarly))
+                            break;
+                    }
+
+                    // Re-park the cursor before capturing so hover state cannot
+                    // poison the frame and the cursor itself can't be captured.
+                    NativeMethods.SetCursorPos(safeCursor.X, safeCursor.Y);
+                    if (SleepPollEscape(CursorSafeSettleMs, ref stoppedEarly))
+                        break;
+
+                    var snap = ScreenCapture.CaptureScreenRegion(screenRegion);
+
+                    // Pixel-based end detection: if multiple sample bands are
+                    // essentially identical to the previous frame, the page did
+                    // not move so we have reached the bottom (or scrolling is no
+                    // longer possible). Two such frames in a row stops the loop.
+                    if (FramesLookIdentical(captures[^1], snap))
+                    {
+                        snap.Dispose();
+                        stagnantCount++;
+                        if (stagnantCount >= 2) break;
+                        continue;
+                    }
+                    stagnantCount = 0;
+                    captures.Add(snap);
+
+                    if (!double.IsNaN(afterPercent) && afterPercent >= 99.95) break;
                 }
-
-                // Re-park the cursor before capturing so hover state cannot
-                // poison the frame and the cursor itself can't be captured.
-                NativeMethods.SetCursorPos(safeCursor.X, safeCursor.Y);
-                Thread.Sleep(CursorSafeSettleMs);
-
-                var snap = ScreenCapture.CaptureScreenRegion(screenRegion);
-
-                // Pixel-based end detection: if multiple sample bands are
-                // essentially identical to the previous frame, the page did
-                // not move so we have reached the bottom (or scrolling is no
-                // longer possible). Two such frames in a row stops the loop.
-                if (FramesLookIdentical(captures[^1], snap))
-                {
-                    snap.Dispose();
-                    stagnantCount++;
-                    if (stagnantCount >= 2) break;
-                    continue;
-                }
-                stagnantCount = 0;
-                captures.Add(snap);
-
-                if (!double.IsNaN(afterPercent) && afterPercent >= 99.95) break;
             }
+
+            if (stoppedEarly && captures.Count == 0)
+                captures.Add(ScreenCapture.CaptureScreenRegion(screenRegion));
 
             if (!double.IsNaN(originalPercent))
             {
                 target.TrySetScrollPercent(originalPercent);
             }
+
+            var mode = direction == CaptureDirection.Horizontal ? CaptureMode.Horizontal : CaptureMode.Vertical;
 
             if (captures.Count == 1)
             {
@@ -140,21 +153,30 @@ internal sealed class ScrollCaptureService
                     Success = true,
                     Image = only,
                     PartCount = 1,
-                    Mode = direction == CaptureDirection.Horizontal ? CaptureMode.Horizontal : CaptureMode.Vertical,
+                    Mode = mode,
                     Direction = direction,
-                    Message = "Content was not scrollable beyond the visible viewport.",
+                    Message = stoppedEarly
+                        ? "Stopped early (Esc). Single frame captured."
+                        : "Content was not scrollable beyond the visible viewport.",
                 };
             }
 
             var stitched = ImageStitcher.Stitch(captures, direction, StickyTrim, out var stitchMsg);
+            string message = stitchMsg ?? string.Empty;
+            if (stoppedEarly)
+            {
+                message = $"Stopped early (Esc). Stitched {captures.Count} frame(s)."
+                    + (string.IsNullOrWhiteSpace(stitchMsg) ? "" : " " + stitchMsg);
+            }
+
             return new CaptureResult
             {
                 Success = stitched != null,
                 Image = stitched,
                 PartCount = captures.Count,
-                Mode = direction == CaptureDirection.Horizontal ? CaptureMode.Horizontal : CaptureMode.Vertical,
+                Mode = mode,
                 Direction = direction,
-                Message = stitchMsg,
+                Message = message,
             };
         }
         finally
@@ -163,6 +185,31 @@ internal sealed class ScrollCaptureService
             // Always restore the user's cursor, even on exceptions.
             if (hadCursor) NativeMethods.SetCursorPos(originalPt.X, originalPt.Y);
         }
+    }
+
+    private static bool CheckEscape(ref bool stoppedEarly)
+    {
+        if (!NativeMethods.IsEscapeDown()) return false;
+        stoppedEarly = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Sleeps in short slices so Escape can stop capture during settle delays.
+    /// Returns true when Escape was pressed.
+    /// </summary>
+    private static bool SleepPollEscape(int ms, ref bool stoppedEarly)
+    {
+        const int slice = 50;
+        int elapsed = 0;
+        while (elapsed < ms)
+        {
+            if (CheckEscape(ref stoppedEarly)) return true;
+            int step = Math.Min(slice, ms - elapsed);
+            Thread.Sleep(step);
+            elapsed += step;
+        }
+        return false;
     }
 
     /// <summary>

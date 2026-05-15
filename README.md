@@ -51,7 +51,8 @@ sticky headers/footers cannot poison the alignment.
 - Conservative end detection: stops when UI Automation reports the scroll
 has reached the end, when two consecutive scroll attempts fail to move
 the content, or when the captured frame becomes pixel-identical to the
-previous one.
+previous one. During vertical or horizontal scroll capture, press **Esc**
+to stop early and stitch whatever frames were captured so far.
 - Cursor parking: the cursor is moved out of the capture region before each
 frame, so it never appears in the stitched image.
 - Sticky header / footer trimming (`Auto` / `Aggressive` / `Off`) during
@@ -60,7 +61,7 @@ vertical stitching, so repeated top/bottom bands are not duplicated.
 resizable, and undoable. Includes:
   - Rectangle, highlight, blur (editable, non-destructive), arrow, text,
   numbered step marker, magnifier, spotlight, speech balloon.
-  - **OCR / Search** dialog (toolbar): run Windows OCR, copy extracted text,
+  - **OCR / Search** dialog (toolbar): run Windows OCR, view and edit full extracted text,
   and search with live match highlights on the canvas.
   - PDF export with `A4`, `Letter`, or `Fit width` page sizes for tall
   captures.
@@ -159,7 +160,7 @@ dotnet build -c Release
 | `Ctrl + C`                      | Copy flattened image to clipboard                                                                       |
 
 
-**OCR / Search**: use the menu **Tools → OCR / Search…**, the toolbar button **OCR / Search…** (after **Copy**), or **Ctrl+Shift+O**. Run **Run OCR** to copy recognized text to the clipboard; use the search box for on-image highlights. Closing the dialog clears highlights.
+**OCR / Search**: use the menu **Tools → OCR / Search…**, the toolbar button **OCR / Search…** (after **Copy**), or **Ctrl+Shift+O**. Run **Run OCR** to fill an editable full-text area (also copied to the clipboard); use the search box for on-image highlights. Closing the dialog clears highlights.
 
 Tray menu options:
 
