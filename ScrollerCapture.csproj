@@ -15,7 +15,22 @@
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <Company>Unnamed10110</Company>
+    <Product>ScrollerCapture</Product>
+    <Description>Screen scroll capture and annotation utility for Windows</Description>
+    <Copyright>Copyright (C) Unnamed10110</Copyright>
+    <ApplicationIcon>Assets\ScrollerCapture.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="PDFsharp" Version="6.1.1" />

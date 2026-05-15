@@ -35,7 +35,7 @@ if /I "%MODE%"=="publish" (
     if errorlevel 1 goto :fail
     echo.
     echo Published output:
-    echo   %CD%\bin\%CONFIG%\net8.0-windows\win-x64\publish\ScrollerCapture.exe
+    echo   %CD%\bin\%CONFIG%\net8.0-windows10.0.19041.0\win-x64\publish\ScrollerCapture.exe
 ) else (
     echo === Building ScrollerCapture ^(%CONFIG%^) ===
     dotnet build ScrollerCapture.csproj -c %CONFIG% --nologo -v minimal

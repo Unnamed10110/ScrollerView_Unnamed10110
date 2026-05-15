@@ -267,18 +267,7 @@ internal sealed class SettingsForm : Form
         Close();
     }
 
-    private static Icon? TryGetAppIcon()
-    {
-        try
-        {
-            return Icon.ExtractAssociatedIcon(
-                System.Reflection.Assembly.GetExecutingAssembly().Location);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static Icon? TryGetAppIcon() => AppIconFactory.GetApplicationIcon();
 }
 
 /// <summary>

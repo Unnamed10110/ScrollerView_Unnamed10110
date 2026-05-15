@@ -516,18 +516,7 @@ internal sealed class CaptureEditorForm : Form
         base.Dispose(disposing);
     }
 
-    private static Icon? TryGetAppIcon()
-    {
-        try
-        {
-            return System.Drawing.Icon.ExtractAssociatedIcon(
-                System.Reflection.Assembly.GetExecutingAssembly().Location);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static Icon? TryGetAppIcon() => AppIconFactory.GetApplicationIcon();
 }
 
 internal sealed class TextInputForm : Form

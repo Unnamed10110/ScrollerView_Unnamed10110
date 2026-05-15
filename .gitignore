@@ -11,6 +11,7 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 publish/
+installer/output/
 
 # .NET
 project.lock.json

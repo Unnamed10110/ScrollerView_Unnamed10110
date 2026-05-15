@@ -78,7 +78,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _trayIcon = new NotifyIcon
         {
-            Icon = BuildTrayIcon(),
+            Icon = AppIconFactory.CreateIcon(),
             Text = BuildTrayTooltip(_settings),
             Visible = true,
             ContextMenuStrip = _menu,
@@ -579,28 +579,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 UseShellExecute = true,
             });
         }
-    }
-
-    private static Icon BuildTrayIcon()
-    {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var bg = new SolidBrush(Color.FromArgb(32, 110, 200));
-            g.FillEllipse(bg, 1, 1, 30, 30);
-            using var pen = new Pen(Color.White, 2.5f);
-            g.DrawLine(pen, 7, 16, 25, 16);
-            g.DrawLine(pen, 7, 16, 11, 12);
-            g.DrawLine(pen, 7, 16, 11, 20);
-            g.DrawLine(pen, 25, 16, 21, 12);
-            g.DrawLine(pen, 25, 16, 21, 20);
-        }
-        var hIcon = bmp.GetHicon();
-        var icon = (Icon)Icon.FromHandle(hIcon).Clone();
-        NativeMethods.DestroyIcon(hIcon);
-        return icon;
     }
 
     protected override void Dispose(bool disposing)
