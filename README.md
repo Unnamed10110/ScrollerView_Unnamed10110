@@ -72,7 +72,9 @@ resizable, and undoable. Includes:
 `{height}`.
 
 ## Usage
-[![Watch the video](preview.gif)](https://github.com/Unnamed10110/ScrollerView_Unnamed10110/raw/refs/heads/master/Assets/Scroller_Unnamed10110.mp4)
+
+https://github.com/Unnamed10110/ScrollerView_Unnamed10110/raw/refs/heads/master/Assets/Scroller_Unnamed10110.mp4
+
 
 ## Requirements
 
