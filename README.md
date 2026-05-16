@@ -71,6 +71,10 @@ resizable, and undoable. Includes:
 `{datetime}`, `{mode}`, `{direction}`, `{app}`, `{title}`, `{width}`,
 `{height}`.
 
+## Usage
+
+<video controls src="Scroller_Unnamed10110.mp4" title="Title"></video>
+
 ## Requirements
 
 - Windows 10 / 11 (x64).
