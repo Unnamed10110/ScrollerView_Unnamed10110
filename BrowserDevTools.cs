@@ -142,7 +142,7 @@ internal static class BrowserDevTools
         int port = options.Port > 0 ? options.Port : 9223;
         var profile = !string.IsNullOrEmpty(options.DedicatedProfilePath)
             ? options.DedicatedProfilePath
-            : Path.Combine(Path.GetTempPath(), "ScrollerCapture-Browser-Profile");
+            : Path.Combine(Path.GetTempPath(), AppBranding.ShortName + "-Browser-Profile");
         try { Directory.CreateDirectory(profile); } catch { /* ignore */ }
 
         try

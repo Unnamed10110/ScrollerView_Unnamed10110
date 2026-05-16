@@ -28,8 +28,8 @@ internal static class Program
         catch (Exception ex)
         {
             MessageBox.Show(
-                "ScrollerCapture crashed:\n\n" + ex,
-                "ScrollerCapture",
+                AppBranding.DisplayName + " crashed:\n\n" + ex,
+                AppBranding.DisplayName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

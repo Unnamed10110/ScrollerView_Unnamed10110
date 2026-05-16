@@ -93,7 +93,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _trayIcon.ShowBalloonTip(
                 4000,
-                "ScrollerCapture",
+                AppBranding.DisplayName,
                 "Some hotkeys could not be registered: " + failures + ". Adjust them in Settings...",
                 ToolTipIcon.Warning);
         }
@@ -101,7 +101,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _trayIcon.ShowBalloonTip(
                 3000,
-                "ScrollerCapture",
+                AppBranding.DisplayName,
                 $"Running. Region: {_settings.Hotkeys.Region.Display}.  Vertical: {_settings.Hotkeys.Vertical.Display}.  Horizontal: {_settings.Hotkeys.Horizontal.Display}.",
                 ToolTipIcon.Info);
         }
@@ -222,7 +222,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private static string BuildTrayTooltip(AppSettings s) =>
-        "ScrollerCapture - " +
+        AppBranding.DisplayName + " - " +
         $"{s.Hotkeys.Region.Display}=region, " +
         $"{s.Hotkeys.Vertical.Display}=vertical, " +
         $"{s.Hotkeys.Horizontal.Display}=horizontal";
@@ -255,7 +255,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
             catch (Exception ex)
             {
-                ShowError("ScrollerCapture failed", ex.Message);
+                ShowError(AppBranding.DisplayName + " failed", ex.Message);
             }
             finally
             {
@@ -463,7 +463,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-            "ScrollerCapture");
+            AppBranding.ShortName);
         Directory.CreateDirectory(folder);
         var name = FilenameTemplateService.Build(
             _settings.Output.FilenameTemplate,
@@ -479,7 +479,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-            "ScrollerCapture");
+            AppBranding.ShortName);
         Directory.CreateDirectory(folder);
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {

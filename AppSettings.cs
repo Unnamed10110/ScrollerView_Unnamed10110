@@ -10,7 +10,7 @@ namespace ScrollerCapture;
 /// <summary>
 /// Single persisted settings file for the whole app: hotkeys, capture
 /// behavior, output, and browser DevTools options. Stored in
-/// <c>%LOCALAPPDATA%\ScrollerCapture\settings.json</c>. The previous
+/// <c>%LOCALAPPDATA%\ScrollerView\settings.json</c>. The previous
 /// hotkey-only file format (just <c>Horizontal</c>/<c>Vertical</c> at the
 /// root) is migrated transparently on first load.
 /// </summary>
@@ -24,7 +24,7 @@ internal sealed class AppSettings
     [JsonIgnore]
     public static string SettingsPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "ScrollerCapture",
+        AppBranding.ShortName,
         "settings.json");
 
     public static AppSettings LoadOrDefault()

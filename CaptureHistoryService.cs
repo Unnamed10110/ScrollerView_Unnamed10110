@@ -37,7 +37,7 @@ internal sealed class CaptureHistoryService
 {
     private static readonly string HistoryPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "ScrollerCapture",
+        AppBranding.ShortName,
         "history.json");
 
     private readonly object _lock = new();

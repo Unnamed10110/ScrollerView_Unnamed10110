@@ -26,7 +26,7 @@ internal sealed class CaptureEditorForm : Form
         if (capturedImage == null) throw new ArgumentNullException(nameof(capturedImage));
         _settings = settings;
 
-        Text = "ScrollerCapture Editor";
+        Text = AppBranding.DisplayName + " — Editor";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(640, 480);
         KeyPreview = true;
@@ -166,7 +166,7 @@ internal sealed class CaptureEditorForm : Form
         try
         {
             using var flat = _canvas.FlattenForOutput();
-            string folder = Path.Combine(Path.GetTempPath(), "ScrollerCapture-Share");
+            string folder = Path.Combine(Path.GetTempPath(), AppBranding.ShortName + "-Share");
             Directory.CreateDirectory(folder);
             string path = Path.Combine(folder, $"share-{DateTime.Now:yyyyMMdd-HHmmss}.png");
             flat.Save(path, System.Drawing.Imaging.ImageFormat.Png);
@@ -193,7 +193,7 @@ internal sealed class CaptureEditorForm : Form
             FileName = $"scroll-capture-{DateTime.Now:yyyyMMdd-HHmmss}.pdf",
             InitialDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-                "ScrollerCapture"),
+                AppBranding.DisplayName),
             OverwritePrompt = true,
             AddExtension = true,
         };
@@ -211,7 +211,7 @@ internal sealed class CaptureEditorForm : Form
         catch (Exception ex)
         {
             MessageBox.Show(this, "PDF export failed:\n\n" + ex.Message,
-                "ScrollerCapture Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppBranding.DisplayName + " — Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -373,7 +373,7 @@ internal sealed class CaptureEditorForm : Form
         {
             var ok = MessageBox.Show(this,
                 "Discard edits and close without saving?",
-                "ScrollerCapture Editor",
+                AppBranding.DisplayName + " — Editor",
                 MessageBoxButtons.OKCancel,
                 MessageBoxIcon.Warning);
             if (ok != DialogResult.OK) return;
@@ -390,7 +390,7 @@ internal sealed class CaptureEditorForm : Form
             FileName = $"scroll-capture-{DateTime.Now:yyyyMMdd-HHmmss}.png",
             InitialDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-                "ScrollerCapture"),
+                AppBranding.DisplayName),
             OverwritePrompt = true,
             AddExtension = true,
         };
@@ -421,7 +421,7 @@ internal sealed class CaptureEditorForm : Form
         catch (Exception ex)
         {
             MessageBox.Show(this, "Failed to save:\n\n" + ex.Message,
-                "ScrollerCapture Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppBranding.DisplayName + " — Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -469,7 +469,9 @@ internal sealed class CaptureEditorForm : Form
         _statusTool.Text = $"Tool: {_canvas.ActiveTool}";
         _statusZoom.Text = $"Zoom: {Math.Round(_canvas.Zoom * 100)}%";
         _statusSize.Text = $"Size: {_canvas.ImageWidth} x {_canvas.ImageHeight}";
-        Text = _canvas.IsDirty ? "ScrollerCapture Editor *" : "ScrollerCapture Editor";
+        Text = _canvas.IsDirty
+            ? AppBranding.DisplayName + " — Editor *"
+            : AppBranding.DisplayName + " — Editor";
     }
 
     private void FlashStatus(string message)
@@ -494,7 +496,7 @@ internal sealed class CaptureEditorForm : Form
             {
                 var ok = MessageBox.Show(this,
                     "Discard edits and close without saving?",
-                    "ScrollerCapture Editor",
+                    AppBranding.DisplayName + " — Editor",
                     MessageBoxButtons.OKCancel,
                     MessageBoxIcon.Warning);
                 if (ok != DialogResult.OK)

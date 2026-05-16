@@ -20,8 +20,8 @@
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0</InformationalVersion>
     <Company>Unnamed10110</Company>
-    <Product>ScrollerCapture</Product>
-    <Description>Screen scroll capture and annotation utility for Windows</Description>
+    <Product>ScrollerView By Unnamed10110</Product>
+    <Description>ScrollerView By Unnamed10110 — screen scroll capture and annotation for Windows</Description>
     <Copyright>Copyright (C) Unnamed10110</Copyright>
     <ApplicationIcon>Assets\ScrollerCapture.ico</ApplicationIcon>
   </PropertyGroup>

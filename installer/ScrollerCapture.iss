@@ -2,7 +2,7 @@
 ; Build publish output first:  build.bat publish
 ; Compile with Inno Setup 6:     iscc installer\ScrollerCapture.iss
 
-#define MyAppName "ScrollerCapture"
+#define MyAppName "ScrollerView By Unnamed10110"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Unnamed10110"
 #define MyAppURL "https://github.com/Unnamed10110/ScrollerCapture"
@@ -62,7 +62,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; Tasks: launchafter
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\ScrollerCapture"
+Type: filesandordirs; Name: "{userappdata}\ScrollerView"
 
 [Code]
 function PublishDir(): String;

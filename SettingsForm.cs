@@ -27,7 +27,7 @@ internal sealed class SettingsForm : Form
         _apply = apply ?? throw new ArgumentNullException(nameof(apply));
         ResultSettings = current.Clone();
 
-        Text = "ScrollerCapture Settings";
+        Text = AppBranding.DisplayName + " — Settings";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

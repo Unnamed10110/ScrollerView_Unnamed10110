@@ -1,4 +1,4 @@
-# ScrollerCapture
+# ScrollerView By Unnamed10110
 
 A lightweight Windows tray utility that captures **scrollable regions** of the
 screen and stitches them into one clean, seamless PNG. It supports
@@ -6,7 +6,7 @@ screen and stitches them into one clean, seamless PNG. It supports
 direction**, **manual scroll fallback**, and **full-page browser** captures.
 
 Press a global hotkey, drag a rectangle (or click an automatically detected
-UI element) over the content you want, and ScrollerCapture will:
+UI element) over the content you want, and ScrollerView will:
 
 1. (Optionally) wait a configurable countdown so you can move focus.
 2. Detect the underlying scrollable UI element on the chosen axis.
@@ -39,10 +39,10 @@ click accepts, drag overrides, `Esc` cancels.
 appears; when neither is scrollable, classic region or manual scroll is
 offered.
 - Manual scroll fallback with a topmost controller overlay: scroll the page
-yourself, frames are sampled, and ScrollerCapture stitches them on `Enter`.
+yourself, frames are sampled, and ScrollerView stitches them on `Enter`.
 - Full-page browser capture via Chrome / Edge DevTools Protocol
 (`Page.captureScreenshot` with `captureBeyondViewport`). If no debug
-endpoint is running, ScrollerCapture can launch a dedicated browser
+endpoint is running, ScrollerView can launch a dedicated browser
 profile with remote debugging enabled.
 - Multi-monitor and Per-Monitor V2 DPI aware (HiDPI correct).
 - Pixel-exact stitching with no interpolation. The matcher uses grayscale
@@ -81,7 +81,7 @@ runtime requirement.
 language pack installed (most US/English/Spanish/etc. installs already
 have one).
 - Full-page browser capture requires Chrome or Edge. If your browser is
-not running with `--remote-debugging-port`, ScrollerCapture can launch
+not running with `--remote-debugging-port`, ScrollerView can launch
 a dedicated profile for you.
 
 ## Build
@@ -108,7 +108,7 @@ dotnet build -c Release
 
 ## Usage
 
-1. Run `ScrollerCapture.exe`. A small arrow icon appears in the system tray.
+1. Run `ScrollerCapture.exe` (product name: **ScrollerView By Unnamed10110**). A small arrow icon appears in the system tray.
 2. Switch to the app containing the content you want to capture.
 3. Press the hotkey for your desired capture mode:
   - `Shift + Alt + A` - region capture (single screenshot).
@@ -188,9 +188,9 @@ Open the tray menu and choose `Settings...`:
 4. Edit the filename template if you want, using tokens like
   `{date}`, `{time}`, `{datetime}`, `{mode}`, `{direction}`, `{app}`,
    `{title}`, `{width}`, `{height}`.
-5. Click `Save`. ScrollerCapture immediately unregisters previous hotkeys,
+5. Click `Save`. ScrollerView immediately unregisters previous hotkeys,
   registers the new ones, and persists everything to
-   `%LOCALAPPDATA%\ScrollerCapture\settings.json`. If a chosen combination
+   `%LOCALAPPDATA%\ScrollerView\settings.json`. If a chosen combination
    is already in use elsewhere it rolls back to the previously working set.
 
 Use `Reset to defaults` to restore `Shift+Alt+A/S/D` and the default
@@ -212,7 +212,7 @@ After you create a balloon with `S`, the editor automatically switches to
 Remove an entire row band from a tall screenshot (or an entire column band
 from a wide screenshot) and join the remaining parts seamlessly:
 
-- If your drag rectangle is **wider than tall**, ScrollerCapture deletes
+- If your drag rectangle is **wider than tall**, ScrollerView deletes
 rows `[Y, Y + Height)` across the **full image width**.
 - If it is **taller than wide**, it deletes columns `[X, X + Width)`
 across the **full image height**.
@@ -225,7 +225,7 @@ and annotations that intersect the strip are dropped. Undoable.
 
 Tray > `Full-page browser capture`:
 
-1. ScrollerCapture probes the DevTools endpoints configured in
+1. ScrollerView probes the DevTools endpoints configured in
   `Settings...` > `Browser` (default port 9222).
 2. If found, it lists open tabs and lets you pick one. The selected tab is
   captured beyond the viewport using `Page.captureScreenshot`.
@@ -238,7 +238,7 @@ Tray > `Full-page browser capture`:
 Use this when a control doesn't expose UI Automation scrolling (some
 games, RDP, custom canvases). The capture region is locked, a topmost
 overlay appears with instructions, and you scroll the page manually.
-ScrollerCapture samples frames every few hundred ms, keeps only ones with
+ScrollerView samples frames every few hundred ms, keeps only ones with
 a real pixel delta, infers the dominant direction, and stitches them when
 you press `Enter`. Press `Esc` to cancel.
 
@@ -247,13 +247,13 @@ you press `Enter`. Press `Esc` to cancel.
 PNG files default to:
 
 ```
-%USERPROFILE%\Pictures\ScrollerCapture\<filename-template>.png
+%USERPROFILE%\Pictures\ScrollerView\<filename-template>.png
 ```
 
 The default template is `scroll-capture-{datetime}-{mode}`. Pressing
 `Enter` in the editor saves the file **and** copies the same flattened
 image to the Windows clipboard. The tray's `Recent captures` submenu and
-`%LOCALAPPDATA%\ScrollerCapture\history.json` keep track of the last N
+`%LOCALAPPDATA%\ScrollerView\history.json` keep track of the last N
 captures.
 
 ## How it works
@@ -319,7 +319,7 @@ and [OcrService.cs](OcrService.cs) for OCR.
 
 ## Limitations
 
-ScrollerCapture relies on Windows UI Automation to know whether the content
+ScrollerView relies on Windows UI Automation to know whether the content
 under the cursor is scrollable on the requested axis. This covers a wide
 range of apps: most browser pages, Win32 / WPF / WinUI / WinForms controls,
 Office, Visual Studio, file dialogs, grids, editors, etc.

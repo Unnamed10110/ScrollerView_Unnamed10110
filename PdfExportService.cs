@@ -21,8 +21,8 @@ internal static class PdfExportService
         if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("File path required.", nameof(filePath));
 
         using var doc = new PdfDocument();
-        doc.Info.Title = "ScrollerCapture";
-        doc.Info.Creator = "ScrollerCapture";
+        doc.Info.Title = AppBranding.DisplayName;
+        doc.Info.Creator = AppBranding.DisplayName;
 
         double pageW, pageH; // in points (1/72 inch)
         switch (size)
