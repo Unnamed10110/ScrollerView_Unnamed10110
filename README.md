@@ -75,7 +75,6 @@ resizable, and undoable. Includes:
 
 ![alt text](Scroller_Unnamed10110.gif)
 
-
 ## Requirements
 
 - Windows 10 / 11 (x64).
