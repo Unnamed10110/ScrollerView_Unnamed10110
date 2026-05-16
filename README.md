@@ -76,6 +76,10 @@ resizable, and undoable. Includes:
 ![alt text](Scroller_Unnamed10110.gif)
 
 
+<video controls width="100%">
+  <source src="https://github.com/Unnamed10110/ScrollerView_Unnamed10110/raw/refs/heads/master/Assets/Scroller_Unnamed10110.mp4" type="video/mp4">
+</video>
+
 ## Requirements
 
 - Windows 10 / 11 (x64).
