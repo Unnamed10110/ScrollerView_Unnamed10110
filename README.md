@@ -72,8 +72,7 @@ resizable, and undoable. Includes:
 `{height}`.
 
 ## Usage
-<video controls src="Scroller_Unnamed10110.mp4" title="Tutorial"></video>
-
+[![Watch the video](preview.gif)](Scroller_Unnamed10110.mp4)
 
 ## Requirements
 
