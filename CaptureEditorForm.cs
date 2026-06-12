@@ -8,6 +8,7 @@ namespace ScrollerCapture;
 internal sealed class CaptureEditorForm : Form
 {
     private readonly EditorCanvasControl _canvas;
+    private readonly EditorStylePanel _stylePanel;
     private readonly StatusStrip _status;
     private readonly ToolStripStatusLabel _statusTool;
     private readonly ToolStripStatusLabel _statusZoom;
@@ -51,12 +52,14 @@ internal sealed class CaptureEditorForm : Form
         _canvas.SpeechBalloonEditRequested += OnSpeechBalloonEditRequested;
         _canvas.TextRequested += OnTextRequested;
 
+        _stylePanel = new EditorStylePanel(_canvas);
+
         _status = new StatusStrip { Dock = DockStyle.Bottom };
         _statusTool = new ToolStripStatusLabel("Tool: None") { AutoSize = true };
         _statusZoom = new ToolStripStatusLabel("Zoom: 100%") { AutoSize = true };
         _statusSize = new ToolStripStatusLabel($"Size: {capturedImage.Width} x {capturedImage.Height}") { AutoSize = true };
         _statusHint = new ToolStripStatusLabel(
-            "Enter=Save+Copy  …  Ctrl+Shift+O=OCR  V=Select  R=Rect  B=Blur  A=Arrow  H=Highlight  S=Balloon  T=Text  N=Step  M=Magnify  O=Spot  X=Crop  C=Strip  Del=Delete  Ctrl+Wheel=Zoom")
+            "Enter=Save+Copy  …  V=Select  R=Rect  E=Ellipse  L=Line  P=Pen  B=Blur  A=Arrow  H=Highlight  S=Balloon  T=Text  N=Step  M=Magnify  O=Spot  X=Crop  C=Strip  Del=Delete  Ctrl+Wheel=Zoom")
         {
             Spring = true,
             TextAlign = ContentAlignment.MiddleRight,
@@ -64,9 +67,11 @@ internal sealed class CaptureEditorForm : Form
         };
         _status.Items.AddRange(new ToolStripItem[] { _statusTool, _statusZoom, _statusSize, _statusHint });
 
-        // Z-order: add menu strip last so both dock Top stacks with menu at the
-        // very top; canvas Fill; status Bottom.
+        // Z-order matters for docking: controls added later claim their edge
+        // first. Canvas (Fill) added first → gets the leftover space. Style
+        // panel (Right) added next, then status/toolbar/menu span full width.
         Controls.Add(_canvas);
+        Controls.Add(_stylePanel);
         Controls.Add(_status);
         Controls.Add(_toolbar);
         Controls.Add(_mainMenu);
@@ -81,6 +86,7 @@ internal sealed class CaptureEditorForm : Form
             {
                 _canvas.InitializeViewportOnShow();
                 _canvas.Focus();
+                _stylePanel.RefreshFromCanvas();
                 UpdateStatus();
             });
         };
@@ -100,6 +106,9 @@ internal sealed class CaptureEditorForm : Form
         ts.Items.Add(MakeToolButton("Cutout (X)", EditorTool.Cutout));
         ts.Items.Add(MakeToolButton("Strip Cut (C)", EditorTool.StripCutout));
         ts.Items.Add(MakeToolButton("Rectangle (R)", EditorTool.Rectangle));
+        ts.Items.Add(MakeToolButton("Ellipse (E)", EditorTool.Ellipse));
+        ts.Items.Add(MakeToolButton("Line (L)", EditorTool.Line));
+        ts.Items.Add(MakeToolButton("Pen (P)", EditorTool.Pen));
         ts.Items.Add(MakeToolButton("Blur (B)", EditorTool.Blur));
         ts.Items.Add(MakeToolButton("Arrow (A)", EditorTool.Arrow));
         ts.Items.Add(MakeToolButton("Highlight (H)", EditorTool.Highlight));
@@ -308,6 +317,9 @@ internal sealed class CaptureEditorForm : Form
             case Keys.X: SetActiveTool(EditorTool.Cutout); return true;
             case Keys.C: SetActiveTool(EditorTool.StripCutout); return true;
             case Keys.R: SetActiveTool(EditorTool.Rectangle); return true;
+            case Keys.E: SetActiveTool(EditorTool.Ellipse); return true;
+            case Keys.L: SetActiveTool(EditorTool.Line); return true;
+            case Keys.P: SetActiveTool(EditorTool.Pen); return true;
             case Keys.B: SetActiveTool(EditorTool.Blur); return true;
             case Keys.A: SetActiveTool(EditorTool.Arrow); return true;
             case Keys.H: SetActiveTool(EditorTool.Highlight); return true;

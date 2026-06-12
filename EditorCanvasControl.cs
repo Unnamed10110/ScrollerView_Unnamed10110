@@ -22,6 +22,13 @@ internal sealed class EditorCanvasControl : Control
     private readonly HashSet<Bitmap> _ownedBitmaps = new();
     private int _nextStepNumber = 1;
 
+    // Per-tool default styles. Editing the style of a selected annotation also
+    // updates the default for that tool so subsequent shapes match.
+    private readonly Dictionary<EditorTool, AnnotationStyle> _toolStyles = new();
+
+    private bool _penDrawing;
+    private List<Point> _penPoints = new();
+
     private float _zoom = 1.0f;
     private PointF _origin;
     private bool _viewportInitialized;
@@ -120,6 +127,96 @@ internal sealed class EditorCanvasControl : Control
     }
 
     public void ClearSelection() => SetSelected(null);
+
+    // ------------------------------------------------------------------
+    // Style API (used by the properties side panel)
+    // ------------------------------------------------------------------
+
+    private static bool IsDrawingTool(EditorTool tool) => tool switch
+    {
+        EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Line or EditorTool.Pen or
+        EditorTool.Blur or EditorTool.Arrow or EditorTool.Highlight or EditorTool.SpeechBalloon or
+        EditorTool.Text or EditorTool.StepMarker or EditorTool.Magnifier or EditorTool.Spotlight => true,
+        _ => false,
+    };
+
+    private static EditorAnnotation? SampleAnnotation(EditorTool tool) => tool switch
+    {
+        EditorTool.Rectangle => new RectangleAnnotation(),
+        EditorTool.Ellipse => new EllipseAnnotation(),
+        EditorTool.Line => new LineAnnotation(),
+        EditorTool.Pen => new FreehandAnnotation(),
+        EditorTool.Blur => new BlurAnnotation(),
+        EditorTool.Arrow => new ArrowAnnotation(),
+        EditorTool.Highlight => new HighlightAnnotation(),
+        EditorTool.SpeechBalloon => new SpeechBalloonAnnotation(),
+        EditorTool.Text => new TextAnnotation(),
+        EditorTool.StepMarker => new StepMarkerAnnotation(),
+        EditorTool.Magnifier => new MagnifierAnnotation(),
+        EditorTool.Spotlight => new SpotlightAnnotation(),
+        _ => null,
+    };
+
+    private static EditorTool ToolForAnnotation(EditorAnnotation a) => a switch
+    {
+        RectangleAnnotation => EditorTool.Rectangle,
+        EllipseAnnotation => EditorTool.Ellipse,
+        LineAnnotation => EditorTool.Line,
+        FreehandAnnotation => EditorTool.Pen,
+        BlurAnnotation => EditorTool.Blur,
+        ArrowAnnotation => EditorTool.Arrow,
+        HighlightAnnotation => EditorTool.Highlight,
+        SpeechBalloonAnnotation => EditorTool.SpeechBalloon,
+        TextAnnotation => EditorTool.Text,
+        StepMarkerAnnotation => EditorTool.StepMarker,
+        MagnifierAnnotation => EditorTool.Magnifier,
+        SpotlightAnnotation => EditorTool.Spotlight,
+        _ => EditorTool.None,
+    };
+
+    /// <summary>Default style for a tool, seeded from that annotation's defaults.</summary>
+    public AnnotationStyle GetToolStyle(EditorTool tool)
+    {
+        if (!_toolStyles.TryGetValue(tool, out var s))
+        {
+            s = SampleAnnotation(tool)?.Style.Clone() ?? new AnnotationStyle();
+            _toolStyles[tool] = s;
+        }
+        return s;
+    }
+
+    /// <summary>The style currently driving the panel: selected annotation, else active tool default.</summary>
+    public AnnotationStyle? GetActiveStyle()
+    {
+        if (_selected != null) return _selected.Style;
+        return IsDrawingTool(_tool) ? GetToolStyle(_tool) : null;
+    }
+
+    /// <summary>An annotation used purely to read style capability flags for the panel.</summary>
+    public EditorAnnotation? GetActiveStyleSource()
+        => _selected ?? (IsDrawingTool(_tool) ? SampleAnnotation(_tool) : null);
+
+    /// <summary>
+    /// Applies a style mutation to the selected annotation (with undo) and the
+    /// matching tool default, or just the tool default if nothing is selected.
+    /// </summary>
+    public void ApplyStyleChange(string label, Action<AnnotationStyle> mutate)
+    {
+        if (_selected != null)
+        {
+            PushUndo(label);
+            mutate(_selected.Style);
+            var t = ToolForAnnotation(_selected);
+            if (t != EditorTool.None) mutate(GetToolStyle(t));
+            Invalidate();
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (IsDrawingTool(_tool))
+        {
+            mutate(GetToolStyle(_tool));
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     public void DeleteSelected()
     {
@@ -449,12 +546,21 @@ internal sealed class EditorCanvasControl : Control
             {
                 Center = ClampPoint(p),
                 Number = _nextStepNumber++,
+                Style = GetToolStyle(EditorTool.StepMarker).Clone(),
             };
             _annotations.Add(marker);
             SetSelected(marker);
             SetTool(EditorTool.Select);
             Invalidate();
             StateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (_tool == EditorTool.Pen)
+        {
+            _penDrawing = true;
+            _penPoints = new List<Point> { ScreenToImageInt(e.Location) };
+            Invalidate();
             return;
         }
 
@@ -481,6 +587,13 @@ internal sealed class EditorCanvasControl : Control
             UpdateManipulation(e.Location);
             return;
         }
+        if (_penDrawing)
+        {
+            var p = ScreenToImageInt(e.Location);
+            if (_penPoints.Count == 0 || _penPoints[^1] != p) _penPoints.Add(p);
+            Invalidate();
+            return;
+        }
         if (_toolDragging)
         {
             _dragCurrentImage = ScreenToImageInt(e.Location);
@@ -502,6 +615,13 @@ internal sealed class EditorCanvasControl : Control
         if (_manipHandle != HandleKind.None)
         {
             EndManipulation();
+            return;
+        }
+        if (_penDrawing && e.Button == MouseButtons.Left)
+        {
+            _penDrawing = false;
+            CommitPen();
+            Invalidate();
             return;
         }
         if (_toolDragging && e.Button == MouseButtons.Left)
@@ -669,11 +789,27 @@ internal sealed class EditorCanvasControl : Control
         {
             case EditorTool.Rectangle:
                 PushUndo("Rectangle");
-                _annotations.Add(new RectangleAnnotation { Box = ClampToImage(imgRect) });
+                _annotations.Add(new RectangleAnnotation
+                {
+                    Box = ClampToImage(imgRect),
+                    Style = GetToolStyle(EditorTool.Rectangle).Clone(),
+                });
+                break;
+            case EditorTool.Ellipse:
+                PushUndo("Ellipse");
+                _annotations.Add(new EllipseAnnotation
+                {
+                    Box = ClampToImage(imgRect),
+                    Style = GetToolStyle(EditorTool.Ellipse).Clone(),
+                });
                 break;
             case EditorTool.Highlight:
                 PushUndo("Highlight");
-                _annotations.Add(new HighlightAnnotation { Box = ClampToImage(imgRect) });
+                _annotations.Add(new HighlightAnnotation
+                {
+                    Box = ClampToImage(imgRect),
+                    Style = GetToolStyle(EditorTool.Highlight).Clone(),
+                });
                 break;
             case EditorTool.Arrow:
                 if (Distance(start, end) < 3) return;
@@ -682,6 +818,17 @@ internal sealed class EditorCanvasControl : Control
                 {
                     Start = ClampPoint(start),
                     End = ClampPoint(end),
+                    Style = GetToolStyle(EditorTool.Arrow).Clone(),
+                });
+                break;
+            case EditorTool.Line:
+                if (Distance(start, end) < 3) return;
+                PushUndo("Line");
+                _annotations.Add(new LineAnnotation
+                {
+                    Start = ClampPoint(start),
+                    End = ClampPoint(end),
+                    Style = GetToolStyle(EditorTool.Line).Clone(),
                 });
                 break;
             case EditorTool.Text:
@@ -694,6 +841,7 @@ internal sealed class EditorCanvasControl : Control
                     {
                         Box = ClampToImage(imgRect),
                         Text = args.Text ?? string.Empty,
+                        Style = GetToolStyle(EditorTool.Text).Clone(),
                     };
                     _annotations.Add(t);
                     SetSelected(t);
@@ -710,6 +858,7 @@ internal sealed class EditorCanvasControl : Control
                     {
                         Box = ClampToImage(imgRect),
                         Text = args.Text ?? string.Empty,
+                        Style = GetToolStyle(EditorTool.SpeechBalloon).Clone(),
                     };
                     b.TailTip = SpeechBalloonAnnotation.DefaultTailTipFor(b.Box);
                     _annotations.Add(b);
@@ -726,7 +875,11 @@ internal sealed class EditorCanvasControl : Control
             case EditorTool.Blur:
                 {
                     PushUndo("Blur");
-                    var blur = new BlurAnnotation { Box = ClampToImage(imgRect) };
+                    var blur = new BlurAnnotation
+                    {
+                        Box = ClampToImage(imgRect),
+                        Style = GetToolStyle(EditorTool.Blur).Clone(),
+                    };
                     _annotations.Add(blur);
                     SetSelected(blur);
                     SetTool(EditorTool.Select);
@@ -744,6 +897,7 @@ internal sealed class EditorCanvasControl : Control
                             Math.Max(0, clamped.Y - clamped.Height),
                             clamped.Width / 2,
                             clamped.Height / 2),
+                        Style = GetToolStyle(EditorTool.Magnifier).Clone(),
                     };
                     _annotations.Add(mag);
                     SetSelected(mag);
@@ -753,13 +907,36 @@ internal sealed class EditorCanvasControl : Control
             case EditorTool.Spotlight:
                 {
                     PushUndo("Spotlight");
-                    var sp = new SpotlightAnnotation { Box = ClampToImage(imgRect) };
+                    var sp = new SpotlightAnnotation
+                    {
+                        Box = ClampToImage(imgRect),
+                        Style = GetToolStyle(EditorTool.Spotlight).Clone(),
+                    };
                     _annotations.Add(sp);
                     SetSelected(sp);
                     SetTool(EditorTool.Select);
                     break;
                 }
         }
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void CommitPen()
+    {
+        var pts = _penPoints;
+        _penPoints = new List<Point>();
+        if (pts.Count < 2) return;
+
+        double len = 0;
+        for (int i = 1; i < pts.Count; i++) len += Distance(pts[i - 1], pts[i]);
+        if (len < 4) return;
+
+        PushUndo("Pen");
+        var fa = new FreehandAnnotation { Style = GetToolStyle(EditorTool.Pen).Clone() };
+        foreach (var p in pts) fa.Points.Add(ClampPoint(p));
+        _annotations.Add(fa);
+        SetSelected(fa);
+        SetTool(EditorTool.Select);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -988,6 +1165,17 @@ internal sealed class EditorCanvasControl : Control
                 var rect = ImageEditing.NormalizeRect(_dragStartImage, _dragCurrentImage);
                 DrawDragPreview(g, rect, _dragStartImage, _dragCurrentImage);
             }
+            if (_penDrawing && _penPoints.Count >= 2)
+            {
+                var st = GetToolStyle(EditorTool.Pen);
+                using var pen = new Pen(st.StrokeColor, st.StrokeWidth)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round,
+                    LineJoin = LineJoin.Round,
+                };
+                g.DrawLines(pen, _penPoints.ToArray());
+            }
             if (_searchHighlights.Count > 0)
             {
                 using var hl = new SolidBrush(Color.FromArgb(120, 255, 230, 80));
@@ -1059,23 +1247,46 @@ internal sealed class EditorCanvasControl : Control
         switch (_tool)
         {
             case EditorTool.Rectangle:
-                using (var fill = new SolidBrush(Color.FromArgb(50, 255, 0, 0)))
-                using (var pen = new Pen(Color.Red, 3f))
                 {
+                    var st = GetToolStyle(EditorTool.Rectangle);
+                    using var fill = new SolidBrush(st.FillColor);
+                    using var pen = new Pen(st.StrokeColor, st.StrokeWidth);
                     g.FillRectangle(fill, rect);
                     g.DrawRectangle(pen, rect);
                 }
                 break;
-            case EditorTool.Highlight:
-                using (var fill = new SolidBrush(Color.FromArgb(110, 255, 235, 60)))
+            case EditorTool.Ellipse:
                 {
+                    var st = GetToolStyle(EditorTool.Ellipse);
+                    using var fill = new SolidBrush(st.FillColor);
+                    using var pen = new Pen(st.StrokeColor, st.StrokeWidth);
+                    g.FillEllipse(fill, rect);
+                    g.DrawEllipse(pen, rect);
+                }
+                break;
+            case EditorTool.Highlight:
+                {
+                    var st = GetToolStyle(EditorTool.Highlight);
+                    using var fill = new SolidBrush(st.FillColor);
                     g.FillRectangle(fill, rect);
                 }
                 break;
             case EditorTool.Arrow:
-                using (var pen = new Pen(Color.Red, 4f) { EndCap = LineCap.ArrowAnchor })
                 {
+                    var st = GetToolStyle(EditorTool.Arrow);
+                    using var pen = new Pen(st.StrokeColor, st.StrokeWidth) { EndCap = LineCap.ArrowAnchor };
                     try { pen.CustomEndCap = new AdjustableArrowCap(4.5f, 5.5f, true); } catch { }
+                    g.DrawLine(pen, start, end);
+                }
+                break;
+            case EditorTool.Line:
+                {
+                    var st = GetToolStyle(EditorTool.Line);
+                    using var pen = new Pen(st.StrokeColor, st.StrokeWidth)
+                    {
+                        StartCap = LineCap.Round,
+                        EndCap = LineCap.Round,
+                    };
                     g.DrawLine(pen, start, end);
                 }
                 break;

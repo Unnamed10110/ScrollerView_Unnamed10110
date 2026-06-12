@@ -59,6 +59,15 @@ internal abstract class EditorAnnotation
 
     public abstract string DisplayName { get; }
     public abstract Rectangle Bounds { get; }
+
+    // ---- Style capability flags ---------------------------------------
+    // Used by the properties side panel to decide which controls to show
+    // for the active tool / selected annotation.
+    public virtual bool UsesStroke => false;
+    public virtual bool UsesFill => false;
+    public virtual bool UsesTextColor => false;
+    public virtual bool UsesFontSize => false;
+    public virtual bool UsesBlur => false;
     public abstract void Render(Graphics g);
     public abstract bool HitTest(Point imagePoint, int tolerance);
     public abstract void Move(int dx, int dy);
@@ -159,6 +168,8 @@ internal abstract class RectAnnotation : EditorAnnotation
 internal sealed class RectangleAnnotation : RectAnnotation
 {
     public override string DisplayName => "Rectangle";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
 
     public RectangleAnnotation()
     {
@@ -177,9 +188,57 @@ internal sealed class RectangleAnnotation : RectAnnotation
     }
 }
 
+internal sealed class EllipseAnnotation : RectAnnotation
+{
+    public override string DisplayName => "Ellipse";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
+
+    public EllipseAnnotation()
+    {
+        Style.StrokeColor = Color.FromArgb(255, 230, 30, 30);
+        Style.FillColor = Color.FromArgb(40, 255, 0, 0);
+        Style.StrokeWidth = 3f;
+    }
+
+    public override void Render(Graphics g)
+    {
+        if (Box.Width <= 0 || Box.Height <= 0) return;
+        var prev = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        if (Style.FillColor.A > 0)
+        {
+            using var fill = new SolidBrush(Style.FillColor);
+            g.FillEllipse(fill, Box);
+        }
+        if (Style.StrokeWidth > 0 && Style.StrokeColor.A > 0)
+        {
+            using var pen = new Pen(Style.StrokeColor, Style.StrokeWidth);
+            g.DrawEllipse(pen, Box);
+        }
+        g.SmoothingMode = prev;
+    }
+
+    public override bool HitTest(Point p, int tol)
+    {
+        // Normalized ellipse equation with a tolerance band so the outline is
+        // grabbable even when the ellipse has no fill.
+        float rx = Box.Width / 2f;
+        float ry = Box.Height / 2f;
+        if (rx <= 0 || ry <= 0) return Rectangle.Inflate(Box, tol, tol).Contains(p);
+        float cx = Box.X + rx;
+        float cy = Box.Y + ry;
+        float nx = (p.X - cx) / (rx + tol);
+        float ny = (p.Y - cy) / (ry + tol);
+        if (nx * nx + ny * ny <= 1f) return true;
+        return false;
+    }
+}
+
 internal sealed class HighlightAnnotation : RectAnnotation
 {
     public override string DisplayName => "Highlight";
+    public override bool UsesFill => true;
 
     public HighlightAnnotation()
     {
@@ -208,6 +267,8 @@ internal sealed class HighlightAnnotation : RectAnnotation
 internal sealed class BlurAnnotation : RectAnnotation
 {
     public override string DisplayName => "Blur";
+    public override bool UsesStroke => false;
+    public override bool UsesBlur => true;
 
     public BlurAnnotation()
     {
@@ -251,6 +312,7 @@ internal sealed class ArrowAnnotation : EditorAnnotation
     private Point _startEnd;
 
     public override string DisplayName => "Arrow";
+    public override bool UsesStroke => true;
 
     public ArrowAnnotation()
     {
@@ -325,11 +387,232 @@ internal sealed class ArrowAnnotation : EditorAnnotation
     }
 }
 
+internal sealed class LineAnnotation : EditorAnnotation
+{
+    public Point Start;
+    public Point End;
+    private Point _startStart;
+    private Point _startEnd;
+
+    public override string DisplayName => "Line";
+    public override bool UsesStroke => true;
+
+    public LineAnnotation()
+    {
+        Style.StrokeColor = Color.FromArgb(255, 230, 30, 30);
+        Style.StrokeWidth = 4f;
+    }
+
+    public override Rectangle Bounds => Rectangle.FromLTRB(
+        Math.Min(Start.X, End.X), Math.Min(Start.Y, End.Y),
+        Math.Max(Start.X, End.X), Math.Max(Start.Y, End.Y));
+
+    public override void Render(Graphics g)
+    {
+        var prevSmooth = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(Style.StrokeColor, Style.StrokeWidth)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        g.DrawLine(pen, Start, End);
+        g.SmoothingMode = prevSmooth;
+    }
+
+    public override bool HitTest(Point p, int tol)
+        => DistancePointToSegment(p, Start, End) <= Math.Max(tol, Style.StrokeWidth + 2);
+
+    public override void Move(int dx, int dy)
+    {
+        Start = new Point(Start.X + dx, Start.Y + dy);
+        End = new Point(End.X + dx, End.Y + dy);
+    }
+
+    public override IEnumerable<AnnotationHandle> GetHandles()
+    {
+        yield return new AnnotationHandle(HandleKind.ArrowStart, Start);
+        yield return new AnnotationHandle(HandleKind.ArrowEnd, End);
+    }
+
+    public override void BeginManipulation(HandleKind kind)
+    {
+        _startStart = Start;
+        _startEnd = End;
+    }
+
+    public override void UpdateManipulation(HandleKind kind, int dx, int dy)
+    {
+        switch (kind)
+        {
+            case HandleKind.ArrowStart: Start = new Point(_startStart.X + dx, _startStart.Y + dy); break;
+            case HandleKind.ArrowEnd: End = new Point(_startEnd.X + dx, _startEnd.Y + dy); break;
+            case HandleKind.Body:
+                Start = new Point(_startStart.X + dx, _startStart.Y + dy);
+                End = new Point(_startEnd.X + dx, _startEnd.Y + dy);
+                break;
+        }
+    }
+
+    private static double DistancePointToSegment(Point p, Point a, Point b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double lenSq = dx * dx + dy * dy;
+        if (lenSq < 1) return Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y));
+        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lenSq;
+        t = Math.Max(0, Math.Min(1, t));
+        double cx = a.X + t * dx, cy = a.Y + t * dy;
+        return Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy));
+    }
+}
+
+/// <summary>
+/// Freehand pen stroke: an open polyline captured while dragging. Supports
+/// whole-shape move plus proportional resize via the bounding-box handles.
+/// </summary>
+internal sealed class FreehandAnnotation : EditorAnnotation
+{
+    public List<Point> Points = new();
+    private List<Point> _startPoints = new();
+    private Rectangle _startBox;
+
+    public override string DisplayName => "Pen";
+    public override bool UsesStroke => true;
+
+    public FreehandAnnotation()
+    {
+        Style.StrokeColor = Color.FromArgb(255, 230, 30, 30);
+        Style.StrokeWidth = 3f;
+    }
+
+    private Rectangle TightBounds()
+    {
+        if (Points.Count == 0) return Rectangle.Empty;
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+        foreach (var p in Points)
+        {
+            if (p.X < minX) minX = p.X;
+            if (p.Y < minY) minY = p.Y;
+            if (p.X > maxX) maxX = p.X;
+            if (p.Y > maxY) maxY = p.Y;
+        }
+        return Rectangle.FromLTRB(minX, minY, maxX, maxY);
+    }
+
+    public override Rectangle Bounds
+    {
+        get
+        {
+            var b = TightBounds();
+            if (b.IsEmpty) return b;
+            int pad = (int)Math.Ceiling(Style.StrokeWidth) + 1;
+            return Rectangle.Inflate(b, pad, pad);
+        }
+    }
+
+    public override void Render(Graphics g)
+    {
+        if (Points.Count == 0) return;
+        var prev = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(Style.StrokeColor, Style.StrokeWidth)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round,
+        };
+        if (Points.Count == 1)
+        {
+            float r = Math.Max(1f, Style.StrokeWidth / 2f);
+            using var b = new SolidBrush(Style.StrokeColor);
+            g.FillEllipse(b, Points[0].X - r, Points[0].Y - r, r * 2, r * 2);
+        }
+        else
+        {
+            g.DrawLines(pen, Points.ToArray());
+        }
+        g.SmoothingMode = prev;
+    }
+
+    public override bool HitTest(Point p, int tol)
+    {
+        double thresh = Math.Max(tol, Style.StrokeWidth + 2);
+        for (int i = 1; i < Points.Count; i++)
+        {
+            if (DistancePointToSegment(p, Points[i - 1], Points[i]) <= thresh) return true;
+        }
+        if (Points.Count == 1)
+        {
+            var d = Points[0];
+            return Math.Abs(p.X - d.X) <= thresh && Math.Abs(p.Y - d.Y) <= thresh;
+        }
+        return false;
+    }
+
+    public override void Move(int dx, int dy)
+    {
+        for (int i = 0; i < Points.Count; i++)
+            Points[i] = new Point(Points[i].X + dx, Points[i].Y + dy);
+    }
+
+    public override IEnumerable<AnnotationHandle> GetHandles() => RectHandles(TightBounds());
+
+    public override void BeginManipulation(HandleKind kind)
+    {
+        _startPoints = new List<Point>(Points);
+        _startBox = TightBounds();
+    }
+
+    public override void UpdateManipulation(HandleKind kind, int dx, int dy)
+    {
+        if (kind == HandleKind.Body)
+        {
+            for (int i = 0; i < _startPoints.Count; i++)
+                Points[i] = new Point(_startPoints[i].X + dx, _startPoints[i].Y + dy);
+            return;
+        }
+        if (_startBox.Width <= 0 || _startBox.Height <= 0) return;
+        var newBox = ResizeRect(_startBox, kind, dx, dy, minDim: 4);
+        float sx = newBox.Width / (float)_startBox.Width;
+        float sy = newBox.Height / (float)_startBox.Height;
+        for (int i = 0; i < _startPoints.Count; i++)
+        {
+            var sp = _startPoints[i];
+            Points[i] = new Point(
+                newBox.X + (int)Math.Round((sp.X - _startBox.X) * sx),
+                newBox.Y + (int)Math.Round((sp.Y - _startBox.Y) * sy));
+        }
+    }
+
+    public override EditorAnnotation Clone()
+    {
+        var copy = (FreehandAnnotation)base.Clone();
+        copy.Points = new List<Point>(Points);
+        copy._startPoints = new List<Point>(_startPoints);
+        return copy;
+    }
+
+    private static double DistancePointToSegment(Point p, Point a, Point b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double lenSq = dx * dx + dy * dy;
+        if (lenSq < 1) return Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y));
+        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lenSq;
+        t = Math.Max(0, Math.Min(1, t));
+        double cx = a.X + t * dx, cy = a.Y + t * dy;
+        return Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy));
+    }
+}
+
 internal sealed class TextAnnotation : RectAnnotation
 {
     public string Text = string.Empty;
 
     public override string DisplayName => "Text";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
+    public override bool UsesTextColor => true;
+    public override bool UsesFontSize => true;
 
     public TextAnnotation()
     {
@@ -384,6 +667,10 @@ internal sealed class StepMarkerAnnotation : EditorAnnotation
     private int _startRadius;
 
     public override string DisplayName => "Step marker";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
+    public override bool UsesTextColor => true;
+    public override bool UsesFontSize => true;
 
     public StepMarkerAnnotation()
     {
@@ -464,6 +751,8 @@ internal sealed class StepMarkerAnnotation : EditorAnnotation
 internal sealed class SpotlightAnnotation : RectAnnotation
 {
     public override string DisplayName => "Spotlight";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
 
     public SpotlightAnnotation()
     {
@@ -509,6 +798,7 @@ internal sealed class MagnifierAnnotation : RectAnnotation
     private Rectangle _startSource;
 
     public override string DisplayName => "Magnifier";
+    public override bool UsesStroke => true;
 
     public MagnifierAnnotation()
     {
@@ -570,6 +860,10 @@ internal sealed class SpeechBalloonAnnotation : EditorAnnotation
     private Point _startTail;
 
     public override string DisplayName => "Balloon";
+    public override bool UsesStroke => true;
+    public override bool UsesFill => true;
+    public override bool UsesTextColor => true;
+    public override bool UsesFontSize => true;
 
     public SpeechBalloonAnnotation()
     {
