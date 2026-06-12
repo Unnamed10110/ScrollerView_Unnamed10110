@@ -6,11 +6,10 @@ using System.Windows.Automation;
 namespace ScrollerCapture;
 
 /// <summary>
-/// Finds UI Automation elements at a screen point that are likely meaningful
-/// capture targets (windows, panes, documents, grids, lists, edit areas).
-/// Walks up from <c>AutomationElement.FromPoint</c> until it hits an element
-/// of an interesting control type, then exposes the ancestor chain so the
-/// user can cycle to broader containers.
+/// ShareX-style element detection: returns the full UI Automation element
+/// chain at a screen point, starting with the deepest element directly under
+/// the cursor (button, toolbar, list item, ...) followed by its ancestors so
+/// the user can widen the selection to broader containers.
 /// </summary>
 internal static class UiElementDetector
 {
@@ -30,7 +29,7 @@ internal static class UiElementDetector
 
     public static List<UiCandidate> FindCandidatesAt(Point screen)
     {
-        var list = new List<UiCandidate>();
+        var raw = new List<UiCandidate>();
         AutomationElement? el = null;
         try
         {
@@ -38,30 +37,44 @@ internal static class UiElementDetector
         }
         catch
         {
-            return list;
+            return raw;
         }
-        if (el == null) return list;
+        if (el == null) return raw;
+
+        int selfPid = Environment.ProcessId;
 
         int safety = 0;
         var current = el;
-        while (current != null && safety++ < 30)
+        while (current != null && safety++ < 40)
         {
             try
             {
-                var bounds = current.Current.BoundingRectangle;
-                if (!bounds.IsEmpty)
+                // Never include our own overlay window in the candidate chain.
+                int pid = 0;
+                try { pid = current.Current.ProcessId; }
+                catch { /* ignore */ }
+
+                if (pid != selfPid)
                 {
-                    var rect = new Rectangle(
-                        (int)Math.Round(bounds.X),
-                        (int)Math.Round(bounds.Y),
-                        (int)Math.Round(bounds.Width),
-                        (int)Math.Round(bounds.Height));
-                    if (rect.Width >= 20 && rect.Height >= 20)
+                    var bounds = current.Current.BoundingRectangle;
+                    if (!bounds.IsEmpty)
                     {
-                        var ct = current.Current.ControlType;
-                        bool interesting = ct != null && InterestingTypes.Contains(ct.Id);
-                        list.Add(new UiCandidate(rect, current.Current.Name ?? string.Empty,
-                            ct?.LocalizedControlType ?? "element", interesting));
+                        var rect = new Rectangle(
+                            (int)Math.Round(bounds.X),
+                            (int)Math.Round(bounds.Y),
+                            (int)Math.Round(bounds.Width),
+                            (int)Math.Round(bounds.Height));
+
+                        // Keep even small controls (buttons, icons) like ShareX does;
+                        // only reject degenerate rectangles. Large windows (even
+                        // maximized/full-screen) are valid capture targets.
+                        if (rect.Width >= 8 && rect.Height >= 8)
+                        {
+                            var ct = current.Current.ControlType;
+                            bool interesting = ct != null && InterestingTypes.Contains(ct.Id);
+                            raw.Add(new UiCandidate(rect, current.Current.Name ?? string.Empty,
+                                ct?.LocalizedControlType ?? "element", interesting));
+                        }
                     }
                 }
             }
@@ -80,23 +93,32 @@ internal static class UiElementDetector
             }
         }
 
+        // Remove duplicates: if two adjacent candidates have the same bounds,
+        // keep only the first (inner/more-specific) one.
+        var list = new List<UiCandidate>(raw.Count);
+        for (int i = 0; i < raw.Count; i++)
+        {
+            bool dup = false;
+            for (int j = 0; j < i; j++)
+            {
+                if (raw[j].Bounds == raw[i].Bounds)
+                {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) list.Add(raw[i]);
+        }
+
         return list;
     }
 
     /// <summary>
-    /// Returns the smallest interesting candidate (the "default" UIA pick)
-    /// from a candidate chain, or the smallest non-empty rectangle if none
-    /// are flagged interesting.
+    /// ShareX behavior: the default pick is the deepest element directly under
+    /// the cursor (index 0). Wheel/Tab widen the selection to ancestors.
     /// </summary>
     public static int FindDefaultIndex(List<UiCandidate> candidates)
-    {
-        if (candidates.Count == 0) return -1;
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            if (candidates[i].Interesting) return i;
-        }
-        return 0;
-    }
+        => candidates.Count == 0 ? -1 : 0;
 }
 
 internal readonly struct UiCandidate

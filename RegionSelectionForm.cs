@@ -18,7 +18,9 @@ internal sealed class RegionSelectionResult
 
 /// <summary>
 /// Fullscreen drag selection overlay with a deep black dim over the virtual screen.
-/// Supports UIA preselection on hover. Drag-to-select overrides preselection.
+/// ShareX-style element detection: the UI element directly under the cursor is
+/// highlighted as you hover; mouse wheel or Tab widens/narrows the selection
+/// through the element's ancestor chain. Drag-to-select overrides detection.
 /// </summary>
 internal sealed class RegionSelectionForm : Form
 {
@@ -42,6 +44,12 @@ internal sealed class RegionSelectionForm : Form
     private Rectangle _preselectRect = Rectangle.Empty;
 
     private Rectangle _lastDirtyBounds = Rectangle.Empty;
+
+    // Marching-ants animation for the element highlight border.
+    private readonly System.Windows.Forms.Timer _antsTimer;
+    private float _dashPhase;
+    private static readonly float[] s_dashPattern = { 5f, 4f };
+    private const int FrameThickness = 2;
 
     private static readonly Font s_frameFont = new(SystemFonts.MessageBoxFont!.FontFamily, 9.5f, FontStyle.Bold);
     private static readonly Font s_hintFont = new(SystemFonts.MessageBoxFont!.FontFamily, 9.5f, FontStyle.Regular);
@@ -71,6 +79,7 @@ internal sealed class RegionSelectionForm : Form
         MouseDown += OnMouseDown;
         MouseMove += OnMouseMove;
         MouseUp += OnMouseUp;
+        MouseWheel += OnMouseWheel;
         Paint += OnPaint;
 
         SetStyle(
@@ -81,6 +90,9 @@ internal sealed class RegionSelectionForm : Form
 
         _uiaThrottle = new System.Windows.Forms.Timer { Interval = 90 };
         _uiaThrottle.Tick += (_, _) => RunUiaQuery();
+
+        _antsTimer = new System.Windows.Forms.Timer { Interval = 60 };
+        _antsTimer.Tick += (_, _) => AnimateAnts();
     }
 
     protected override bool ShowWithoutActivation => false;
@@ -106,11 +118,41 @@ internal sealed class RegionSelectionForm : Form
         _lastDirtyBounds = Rectangle.Empty;
         Invalidate(true);
         _uiaThrottle.Start();
+        _antsTimer.Start();
         if (NativeMethods.GetCursorPos(out var pt))
         {
             _lastMouseScreen = new Point(pt.X, pt.Y);
             _uiaQueryPending = true;
         }
+    }
+
+    /// <summary>
+    /// Advances the dashed border phase and repaints only the element's border
+    /// edges (cheap), producing a marching-ants effect.
+    /// </summary>
+    private void AnimateAnts()
+    {
+        if (_dragging) return;
+        if (_preselectRect.Width <= 0 || _preselectRect.Height <= 0) return;
+
+        _dashPhase -= 1f;
+        if (_dashPhase <= -1000f) _dashPhase = 0f;
+
+        var rect = ToClient(_preselectRect);
+        foreach (var strip in GetFrameEdgeStrips(rect))
+        {
+            Invalidate(strip);
+        }
+    }
+
+    /// <summary>Four thin rectangles covering the element's border edges.</summary>
+    private static IEnumerable<Rectangle> GetFrameEdgeStrips(Rectangle rect)
+    {
+        int t = FrameThickness + 3;
+        yield return new Rectangle(rect.X - t, rect.Y - t, rect.Width + 2 * t, t * 2);            // top
+        yield return new Rectangle(rect.X - t, rect.Bottom - t, rect.Width + 2 * t, t * 2);       // bottom
+        yield return new Rectangle(rect.X - t, rect.Y - t, t * 2, rect.Height + 2 * t);           // left
+        yield return new Rectangle(rect.Right - t, rect.Y - t, t * 2, rect.Height + 2 * t);       // right
     }
 
     protected override void Dispose(bool disposing)
@@ -119,6 +161,8 @@ internal sealed class RegionSelectionForm : Form
         {
             _uiaThrottle.Stop();
             _uiaThrottle.Dispose();
+            _antsTimer.Stop();
+            _antsTimer.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -173,12 +217,8 @@ internal sealed class RegionSelectionForm : Form
 
         if (e.KeyCode == Keys.Tab && !_dragging && _candidates.Count > 0)
         {
-            var oldBounds = ComputeOverlayBounds();
             int delta = (e.Modifiers & Keys.Shift) == Keys.Shift ? -1 : 1;
-            _candidateIndex = Math.Max(0, Math.Min(_candidates.Count - 1, _candidateIndex + delta));
-            _preselectRect = _candidates[_candidateIndex].Bounds;
-            var newBounds = ComputeOverlayBounds();
-            InvalidateDirty(Rectangle.Union(oldBounds, newBounds));
+            CycleCandidate(delta);
             e.Handled = true;
             return;
         }
@@ -228,6 +268,26 @@ internal sealed class RegionSelectionForm : Form
             _lastMouseScreen = screen;
             _uiaQueryPending = true;
         }
+    }
+
+    /// <summary>
+    /// ShareX-style depth control: wheel up widens the selection to the parent
+    /// element, wheel down narrows it back to the deeper child.
+    /// </summary>
+    private void OnMouseWheel(object? sender, MouseEventArgs e)
+    {
+        if (_dragging || _candidates.Count == 0) return;
+        CycleCandidate(e.Delta > 0 ? 1 : -1);
+    }
+
+    private void CycleCandidate(int delta)
+    {
+        if (_candidates.Count == 0) return;
+        var oldBounds = ComputeOverlayBounds();
+        _candidateIndex = Math.Max(0, Math.Min(_candidates.Count - 1, _candidateIndex + delta));
+        _preselectRect = _candidates[_candidateIndex].Bounds;
+        var newBounds = ComputeOverlayBounds();
+        InvalidateDirty(Rectangle.Union(oldBounds, newBounds));
     }
 
     private void OnMouseUp(object? sender, MouseEventArgs e)
@@ -288,12 +348,52 @@ internal sealed class RegionSelectionForm : Form
 
         var oldBounds = ComputeOverlayBounds();
         var pt = _lastMouseScreen;
-        var list = UiElementDetector.FindCandidatesAt(pt);
+
+        // Make the overlay click-through for the duration of the hit test so
+        // AutomationElement.FromPoint resolves to the window underneath instead
+        // of our own fullscreen overlay. Restore immediately afterwards.
+        List<UiCandidate> list;
+        SetClickThrough(true);
+        try
+        {
+            list = UiElementDetector.FindCandidatesAt(pt);
+        }
+        finally
+        {
+            SetClickThrough(false);
+        }
+
         _candidates = list;
         _candidateIndex = UiElementDetector.FindDefaultIndex(list);
         _preselectRect = _candidateIndex >= 0 ? list[_candidateIndex].Bounds : Rectangle.Empty;
         var newBounds = ComputeOverlayBounds();
         InvalidateDirty(Rectangle.Union(oldBounds, newBounds));
+    }
+
+    /// <summary>
+    /// Toggles WS_EX_TRANSPARENT so the overlay does not intercept hit testing
+    /// while we resolve the UI element under the cursor. The form is already a
+    /// layered window (Opacity &lt; 1), so the transparent bit makes it
+    /// click-through for the brief query window.
+    /// </summary>
+    private void SetClickThrough(bool enable)
+    {
+        if (!IsHandleCreated) return;
+        try
+        {
+            long ex = NativeMethods.GetWindowLongPtr(Handle, NativeMethods.GWL_EXSTYLE).ToInt64();
+            long updated = enable
+                ? ex | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT
+                : ex & ~(long)NativeMethods.WS_EX_TRANSPARENT;
+            if (updated != ex)
+            {
+                NativeMethods.SetWindowLongPtr(Handle, NativeMethods.GWL_EXSTYLE, (IntPtr)updated);
+            }
+        }
+        catch
+        {
+            // ignore — detection just falls back to whatever FromPoint returns
+        }
     }
 
     private void OnPaint(object? sender, PaintEventArgs e)
@@ -322,12 +422,13 @@ internal sealed class RegionSelectionForm : Form
             return;
         }
 
-        if (_preselectRect.Width > 0 && _preselectRect.Height > 0)
+        if (_candidateIndex >= 0 && _candidateIndex < _candidates.Count
+            && _preselectRect.Width > 0 && _preselectRect.Height > 0)
         {
-            var rect = ToClient(_preselectRect);
-            DrawSelectionFrame(g, rect);
-            DrawSizePill(g, rect);
-            DrawBottomHint(g, "Click to capture · Tab to cycle · Esc to cancel");
+            DrawElementHighlight(g);
+            var c = _candidates[_candidateIndex];
+            DrawBottomHint(g,
+                $"{c.Display} [{_candidateIndex + 1}/{_candidates.Count}] · Click = capture · Wheel/Tab = widen/narrow · Drag = manual · Esc = cancel");
         }
         else
         {
@@ -335,7 +436,62 @@ internal sealed class RegionSelectionForm : Form
         }
     }
 
-    /// <summary>Bounds of selection chrome + bottom hint (for dirty invalidation).</summary>
+    /// <summary>
+    /// ShareX-style highlight: the element under the cursor gets a faint
+    /// translucent fill plus an animated marching-ants dashed border.
+    /// </summary>
+    private void DrawElementHighlight(Graphics g)
+    {
+        var rect = ToClient(_preselectRect);
+        if (rect.Width <= 0 || rect.Height <= 0) return;
+
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.Half;
+
+        // Subtle fill so the element reads as "lit" without washing out content.
+        using (var fill = new SolidBrush(Color.FromArgb(28, 255, 255, 255)))
+        {
+            g.FillRectangle(fill, rect);
+        }
+
+        DrawDashedFrame(g, rect);
+        DrawSizePill(g, rect);
+    }
+
+    /// <summary>
+    /// Animated marching-ants frame: a solid dark backing line for contrast on
+    /// any background, with a moving white dashed line on top.
+    /// </summary>
+    private void DrawDashedFrame(Graphics g, Rectangle rect)
+    {
+        if (rect.Width <= 0 || rect.Height <= 0) return;
+
+        var prevMode = g.SmoothingMode;
+        // Crisp 1px-aligned lines look better for thin dashes than AA.
+        g.SmoothingMode = SmoothingMode.None;
+        g.PixelOffsetMode = PixelOffsetMode.Half;
+
+        // Dark backing line so the dashes are visible over light content too.
+        using (var backing = new Pen(Color.FromArgb(150, 0, 0, 0), FrameThickness + 1f))
+        {
+            g.DrawRectangle(backing, rect);
+        }
+
+        using (var ants = new Pen(Color.White, FrameThickness)
+        {
+            DashStyle = DashStyle.Custom,
+            DashPattern = s_dashPattern,
+            DashOffset = _dashPhase,
+            LineJoin = LineJoin.Miter,
+        })
+        {
+            g.DrawRectangle(ants, rect);
+        }
+
+        g.SmoothingMode = prevMode;
+    }
+
+    /// <summary>Bounds of selection chrome + active element highlight + bottom hint (for dirty invalidation).</summary>
     private Rectangle ComputeOverlayBounds()
     {
         Rectangle bounds = Rectangle.Empty;
@@ -352,10 +508,12 @@ internal sealed class RegionSelectionForm : Form
 
         if (_preselectRect.Width > 0 && _preselectRect.Height > 0)
         {
-            bounds = Rectangle.Union(bounds, GetSelectionChromeBounds(ToClient(_preselectRect)));
+            bounds = GetSelectionChromeBounds(ToClient(_preselectRect));
         }
 
-        bounds = Rectangle.Union(bounds, GetBottomHintStripBounds());
+        bounds = bounds.IsEmpty
+            ? GetBottomHintStripBounds()
+            : Rectangle.Union(bounds, GetBottomHintStripBounds());
         return bounds;
     }
 
@@ -369,7 +527,9 @@ internal sealed class RegionSelectionForm : Form
         int lx = selection.X;
         int ly = Math.Max(0, selection.Y - pillH - 4);
         var pill = new Rectangle(lx, ly, pillW, pillH);
-        return Rectangle.Union(selection, pill);
+        // Inflate so the frame/backing pen (which straddles the edge) is fully covered.
+        var frame = Rectangle.Inflate(selection, FrameThickness + 2, FrameThickness + 2);
+        return Rectangle.Union(frame, pill);
     }
 
     private Rectangle GetBottomHintStripBounds()

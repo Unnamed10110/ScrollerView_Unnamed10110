@@ -32,9 +32,12 @@ UI element) over the content you want, and ScrollerView will:
   - *(unassigned)* - auto-direction scroll capture (detects best axis and asks
   if ambiguous).
 - Region selection overlay with a **deep black** full-screen dim (not a milky
-gray haze), plus **UIA preselection** that highlights
-the window/pane/grid/document under the cursor. `Tab` cycles candidates,
-click accepts, drag overrides, `Esc` cancels.
+gray haze), plus **ShareX-style element detection**: the UI element directly
+under the cursor (button, toolbar, list, pane, document, …) lights up with a
+translucent highlight and white frame as you hover. **Mouse wheel** (or
+`Tab` / `Shift+Tab`) widens or narrows the selection through the element's
+parent chain; the bottom hint names the current element. Click or `Enter`
+captures the highlighted element, drag overrides, `Esc` cancels.
 - Auto-detect direction: when both axes are scrollable, an AMOLED chooser
 appears; when neither is scrollable, classic region or manual scroll is
 offered.
@@ -120,9 +123,11 @@ dotnet build -c Release
   - `Shift + Alt + D` - horizontal scroll capture.
   - Or use the tray menu for `Capture auto`, `Full-page browser capture`,
   or `Manual scroll capture`.
-4. Drag a rectangle over the area you want to capture, or hover over a
-  detected UI element (highlighted with a red preselection box) and click
-   to accept it. Press `Esc` to cancel.
+4. Hover over any UI element — it lights up automatically with a translucent
+  highlight (ShareX-style). Scroll the **mouse wheel** up to widen the
+  selection to the parent container, down to narrow it back; the bottom hint
+  names the current element. Click or `Enter` captures the highlighted
+  element. Or just drag a rectangle for a manual region. `Esc` cancels.
 5. Wait for the optional countdown (`Settings...` > `Capture delay`).
 6. The editor opens with the result. Annotate, OCR-search, export, then
   press `Enter` to save and copy to the clipboard (or `Esc` to discard).
@@ -296,7 +301,7 @@ and [OcrService.cs](OcrService.cs) for OCR.
 | [SettingsForm.cs](SettingsForm.cs)                                                                                                                                                    | Settings dialog (hotkeys, delay, sticky mode, filename template)                                                             |
 | [NativeMethods.cs](NativeMethods.cs)                                                                                                                                                  | P/Invoke (RegisterHotKey, BitBlt, SendInput, DPI, foreground info)                                                           |
 | [CaptureMode.cs](CaptureMode.cs) / [CaptureResult.cs](CaptureResult.cs)                                                                                                               | Capture command shape                                                                                                        |
-| [RegionSelectionForm.cs](RegionSelectionForm.cs)                                                                                                                                      | Dark selection overlay with UIA preselection                                                                                 |
+| [RegionSelectionForm.cs](RegionSelectionForm.cs)                                                                                                                                      | Dark selection overlay with multi-element UIA highlight                                                                      |
 | [UiElementDetector.cs](UiElementDetector.cs)                                                                                                                                          | UI Automation candidate detection                                                                                            |
 | [ScrollableElementFinder.cs](ScrollableElementFinder.cs)                                                                                                                              | Direction-aware scrollability discovery and inspection                                                                       |
 | [ScreenCapture.cs](ScreenCapture.cs)                                                                                                                                                  | GDI BitBlt screen capture                                                                                                    |
