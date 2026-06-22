@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ScrollerCapture;
@@ -42,6 +44,12 @@ internal sealed class RegionSelectionForm : Form
     private List<UiCandidate> _candidates = new();
     private int _candidateIndex = -1;
     private Rectangle _preselectRect = Rectangle.Empty;
+
+    // Precomputed element model (all windows + their UIA trees). Hover detection
+    // is an in-memory lookup against this instead of a per-move FromPoint call.
+    private readonly UiElementSnapshot _snapshot = new();
+    private CancellationTokenSource? _scanCts;
+    private bool _snapshotScanning;
 
     private Rectangle _lastDirtyBounds = Rectangle.Empty;
 
@@ -117,6 +125,22 @@ internal sealed class RegionSelectionForm : Form
         base.OnShown(e);
         _lastDirtyBounds = Rectangle.Empty;
         Invalidate(true);
+
+        // Phase 1: enumerate top-level windows now (instant) so hovering works
+        // immediately. Phase 2: deep-walk each window's UIA tree in the
+        // background to add fine-grained child/sibling elements.
+        _snapshot.BuildWindows(Handle);
+        _scanCts = new CancellationTokenSource();
+        var token = _scanCts.Token;
+        _snapshotScanning = true;
+        Task.Run(() => _snapshot.RunDeepWalk(token, OnScanProgress), token)
+            .ContinueWith(_ =>
+            {
+                if (IsDisposed || Disposing) return;
+                try { BeginInvoke(new Action(OnScanCompleted)); }
+                catch { /* form closing */ }
+            }, TaskScheduler.Default);
+
         _uiaThrottle.Start();
         _antsTimer.Start();
         if (NativeMethods.GetCursorPos(out var pt))
@@ -124,6 +148,22 @@ internal sealed class RegionSelectionForm : Form
             _lastMouseScreen = new Point(pt.X, pt.Y);
             _uiaQueryPending = true;
         }
+    }
+
+    /// <summary>Background-thread callback: a window finished walking. Refresh the hover.</summary>
+    private void OnScanProgress()
+    {
+        if (IsDisposed || Disposing) return;
+        try { BeginInvoke(new Action(() => { _uiaQueryPending = true; })); }
+        catch { /* form closing */ }
+    }
+
+    private void OnScanCompleted()
+    {
+        _snapshotScanning = false;
+        _uiaQueryPending = true;
+        // Refresh the hint strip (drops the "scanning" suffix).
+        Invalidate(GetBottomHintStripBounds());
     }
 
     /// <summary>
@@ -159,6 +199,8 @@ internal sealed class RegionSelectionForm : Form
     {
         if (disposing)
         {
+            try { _scanCts?.Cancel(); } catch { /* ignore */ }
+            _scanCts?.Dispose();
             _uiaThrottle.Stop();
             _uiaThrottle.Dispose();
             _antsTimer.Stop();
@@ -349,25 +391,41 @@ internal sealed class RegionSelectionForm : Form
         var oldBounds = ComputeOverlayBounds();
         var pt = _lastMouseScreen;
 
-        // Make the overlay click-through for the duration of the hit test so
-        // AutomationElement.FromPoint resolves to the window underneath instead
-        // of our own fullscreen overlay. Restore immediately afterwards.
-        List<UiCandidate> list;
+        // Instant in-memory lookup against the precomputed snapshot.
+        var list = new List<UiCandidate>(_snapshot.StackAt(pt));
+
+        // While the background deep-walk hasn't reached this window yet, the
+        // snapshot only has the window-level rectangle. Fill in finer detail
+        // with a one-off FromPoint query so the first hover is still useful.
+        if (_snapshotScanning && list.Count <= 1)
+        {
+            var fb = FromPointFallback(pt);
+            if (fb.Count > list.Count) list = fb;
+        }
+
+        _candidates = list;
+        _candidateIndex = list.Count > 0 ? 0 : -1;
+        _preselectRect = _candidateIndex >= 0 ? list[_candidateIndex].Bounds : Rectangle.Empty;
+        var newBounds = ComputeOverlayBounds();
+        InvalidateDirty(Rectangle.Union(oldBounds, newBounds));
+    }
+
+    /// <summary>
+    /// One-off <see cref="AutomationElement.FromPoint"/> query used only until
+    /// the background snapshot fills in the hovered window. The overlay is made
+    /// click-through for the hit test so it resolves to the window underneath.
+    /// </summary>
+    private List<UiCandidate> FromPointFallback(Point pt)
+    {
         SetClickThrough(true);
         try
         {
-            list = UiElementDetector.FindCandidatesAt(pt);
+            return UiElementDetector.FindCandidatesAt(pt);
         }
         finally
         {
             SetClickThrough(false);
         }
-
-        _candidates = list;
-        _candidateIndex = UiElementDetector.FindDefaultIndex(list);
-        _preselectRect = _candidateIndex >= 0 ? list[_candidateIndex].Bounds : Rectangle.Empty;
-        var newBounds = ComputeOverlayBounds();
-        InvalidateDirty(Rectangle.Union(oldBounds, newBounds));
     }
 
     /// <summary>
@@ -427,12 +485,14 @@ internal sealed class RegionSelectionForm : Form
         {
             DrawElementHighlight(g);
             var c = _candidates[_candidateIndex];
+            string scan = _snapshotScanning ? " · scanning…" : string.Empty;
             DrawBottomHint(g,
-                $"{c.Display} [{_candidateIndex + 1}/{_candidates.Count}] · Click = capture · Wheel/Tab = widen/narrow · Drag = manual · Esc = cancel");
+                $"{c.Display} [{_candidateIndex + 1}/{_candidates.Count}] · Click = capture · Wheel/Tab = widen/narrow · Drag = manual · Esc = cancel{scan}");
         }
         else
         {
-            DrawBottomHint(g, "Drag to select · Esc to cancel");
+            string scan = _snapshotScanning ? "Scanning windows… · Drag to select · Esc to cancel" : "Drag to select · Esc to cancel";
+            DrawBottomHint(g, scan);
         }
     }
 

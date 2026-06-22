@@ -26,6 +26,25 @@ internal sealed class ScrollCaptureService
         NativeMethods.SetThreadDpiAwarenessContext(
             (IntPtr)NativeMethods.DPI_AWARENESS_CONTEXT.PER_MONITOR_AWARE_V2);
 
+        // Clamp to the visible screen. UI-element bounds (and some regions) can
+        // extend past the monitor edge; capturing those areas yields static
+        // black pixels that never change as the content scrolls, which makes
+        // the stitcher align against a dead band and produce a discontinuous,
+        // "cut" image. Manual drags are always on-screen, which is why they
+        // worked. Clamping makes element/region capture behave the same.
+        var clamped = ClampToVisibleScreen(screenRegion);
+        if (clamped.Width < 8 || clamped.Height < 8)
+        {
+            return new CaptureResult
+            {
+                Success = false,
+                Mode = direction == CaptureDirection.Horizontal ? CaptureMode.Horizontal : CaptureMode.Vertical,
+                Direction = direction,
+                Message = "Selected area is not visible on screen.",
+            };
+        }
+        screenRegion = clamped;
+
         var target = ScrollableElementFinder.Find(screenRegion, direction);
         if (target == null)
         {
@@ -185,6 +204,41 @@ internal sealed class ScrollCaptureService
             // Always restore the user's cursor, even on exceptions.
             if (hadCursor) NativeMethods.SetCursorPos(originalPt.X, originalPt.Y);
         }
+    }
+
+    /// <summary>
+    /// Clamps <paramref name="region"/> to the visible bounds of the monitor it
+    /// mostly overlaps, so we never BitBlt past the screen edge (which returns
+    /// static black pixels that break scroll stitching). Spanning monitors are
+    /// handled by clamping to the union of every screen the region intersects,
+    /// then intersecting back with the region so off-desktop gaps are removed.
+    /// </summary>
+    private static Rectangle ClampToVisibleScreen(Rectangle region)
+    {
+        if (region.Width <= 0 || region.Height <= 0) return Rectangle.Empty;
+
+        // Find the screen with the largest overlap with the region.
+        Rectangle bestBounds = Rectangle.Empty;
+        long bestArea = 0;
+        foreach (var sc in Screen.AllScreens)
+        {
+            var inter = Rectangle.Intersect(sc.Bounds, region);
+            long area = (long)inter.Width * inter.Height;
+            if (area > bestArea)
+            {
+                bestArea = area;
+                bestBounds = sc.Bounds;
+            }
+        }
+
+        if (bestArea == 0)
+        {
+            // Region is entirely off every monitor; fall back to the virtual
+            // screen so we at least capture whatever desktop overlaps.
+            bestBounds = SystemInformation.VirtualScreen;
+        }
+
+        return Rectangle.Intersect(region, bestBounds);
     }
 
     private static bool CheckEscape(ref bool stoppedEarly)

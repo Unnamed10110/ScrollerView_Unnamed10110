@@ -123,18 +123,40 @@ internal static class UiElementDetector
 
 internal readonly struct UiCandidate
 {
-    public UiCandidate(Rectangle bounds, string name, string controlType, bool interesting)
+    public UiCandidate(
+        Rectangle bounds,
+        string name,
+        string controlType,
+        bool interesting,
+        IntPtr hwnd = default,
+        int windowZ = 0,
+        int depth = 0)
     {
         Bounds = bounds;
         Name = name;
         ControlType = controlType;
         Interesting = interesting;
+        Hwnd = hwnd;
+        WindowZ = windowZ;
+        Depth = depth;
     }
 
     public Rectangle Bounds { get; }
     public string Name { get; }
     public string ControlType { get; }
     public bool Interesting { get; }
+
+    /// <summary>Top-level window this element belongs to (zero for the FromPoint fallback path).</summary>
+    public IntPtr Hwnd { get; }
+
+    /// <summary>Z-order index of the owning window (0 = topmost). Lower is more in front.</summary>
+    public int WindowZ { get; }
+
+    /// <summary>Depth of this element in its window's UIA tree (0 = window root).</summary>
+    public int Depth { get; }
+
+    /// <summary>Pixel area, used to order the containing-element stack from smallest to largest.</summary>
+    public long Area => (long)Bounds.Width * Bounds.Height;
 
     public string Display
     {
